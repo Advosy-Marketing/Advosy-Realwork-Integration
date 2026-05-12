@@ -42,6 +42,74 @@ def address_for_claim(claim: dict) -> dict | None:
     return out
 
 
+_LOSS_TYPE_LABELS = {
+    "type_of_loss_water": "Water Damage",
+    "type_of_loss_fire": "Fire Damage",
+    "type_of_loss_mold": "Mold",
+    "type_of_loss_wind": "Wind Damage",
+    "type_of_loss_storm": "Storm Damage",
+    "type_of_loss_hail": "Hail Damage",
+    "type_of_loss_smoke": "Smoke Damage",
+    "type_of_loss_sewage": "Sewage / Contamination",
+    "type_of_loss_biohazard": "Biohazard",
+    "type_of_loss_vandalism": "Vandalism",
+    "type_of_loss_theft": "Theft",
+    "type_of_loss_impact": "Impact",
+    "type_of_loss_other": "Other",
+}
+
+
+def humanize_loss_type(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    return _LOSS_TYPE_LABELS.get(raw, raw.replace("type_of_loss_", "").replace("_", " ").title())
+
+
+def primary_contact_for_claim(claim: dict) -> dict | None:
+    name = claim.get("policyholder_name")
+    email = claim.get("policyholder_email_address")
+    phone = claim.get("policyholder_phone_number")
+    if not (name or email or phone):
+        return None
+    contact: dict = {}
+    if name:
+        contact["name"] = name
+    if email:
+        contact["email_address"] = email
+    if phone:
+        contact["phone_number"] = phone
+    return contact
+
+
+def notepad_for_claim(claim: dict) -> str:
+    lines: list[str] = []
+    def add(label: str, value):
+        if value:
+            lines.append(f"{label}: {value}")
+    add("Type of Loss", humanize_loss_type(claim.get("type_of_loss")))
+    add("Date of Loss", claim.get("date_of_loss"))
+    add("Date Claim Created", claim.get("date_claim_created"))
+    lines.append("")
+    add("Policyholder", claim.get("policyholder_name"))
+    add("Email", claim.get("policyholder_email_address"))
+    add("Phone", claim.get("policyholder_phone_number"))
+    add("Address", claim.get("full_address"))
+    lines.append("")
+    add("Insurance Carrier", claim.get("insurance_company_name"))
+    add("Policy Number", claim.get("policy_number"))
+    add("Adjuster", claim.get("adjuster_name"))
+    add("Broker/Agent", claim.get("broker_or_agent_name"))
+    add("Project Manager", claim.get("project_manager_name"))
+    if claim.get("loss_details"):
+        lines.append("")
+        lines.append("Loss Details:")
+        lines.append(claim["loss_details"])
+    lines.append("")
+    lines.append("---")
+    lines.append(f"Synced from Encircle claim #{claim['id']} — {claim.get('permalink_url', '')}".rstrip(" —"))
+    return "\n".join(lines).strip()
+
+
 def media_tags(media: dict) -> list[str]:
     tags = list(media.get("labels") or [])
     src_type = media.get("source", {}).get("type")
@@ -85,12 +153,13 @@ class SyncEngine:
 
         name = project_name_for_claim(claim)
         addr = address_for_claim(claim)
+        contact = primary_contact_for_claim(claim)
 
         if self.dry_run:
             print(f"  [dry-run] would create CompanyCam project: {name}")
             return None, True
 
-        resp = self.companycam.create_project(name=name, address=addr)
+        resp = self.companycam.create_project(name=name, address=addr, primary_contact=contact)
         project_id = str(resp["id"])
         project_url = resp.get("project_url")
         self.store.record_project_for_claim(claim_id, project_id, project_url)
@@ -104,6 +173,19 @@ class SyncEngine:
                 print(f"  ! failed to apply label '{COMPANYCAM_PROJECT_LABEL}': {e}")
 
         return project_id, True
+
+    def _sync_project_notepad(self, project_id: str | None, claim: dict) -> None:
+        if not project_id:
+            return
+        notepad = notepad_for_claim(claim)
+        if self.dry_run:
+            print(f"  [dry-run] would update notepad ({len(notepad)} chars)")
+            return
+        try:
+            self.companycam.update_project_notepad(project_id, notepad)
+            print(f"  + updated notepad ({len(notepad)} chars)")
+        except Exception as e:
+            print(f"  ! failed to update notepad: {e}")
 
     def _push_photo(self, project_id: str | None, claim_id: str, media: dict) -> tuple[bool, str | None]:
         src = media.get("source", {})
@@ -132,6 +214,7 @@ class SyncEngine:
         print(f"\n[claim {cid}] {claim.get('policyholder_name') or '(no name)'}  {claim.get('full_address') or ''}")
 
         project_id, created = self._ensure_project(claim)
+        self._sync_project_notepad(project_id, claim)
 
         media = self.encircle.list_media(cid)
         result = SyncResult(

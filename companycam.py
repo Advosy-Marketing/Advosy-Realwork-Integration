@@ -31,17 +31,31 @@ class CompanyCamClient:
                 return
             page += 1
 
-    def create_project(self, name: str, address: dict | None = None) -> dict:
-        body: dict = {"project": {"name": name}}
+    def create_project(
+        self,
+        name: str,
+        address: dict | None = None,
+        primary_contact: dict | None = None,
+    ) -> dict:
+        project: dict = {"name": name}
         if address:
-            body["project"]["address"] = address
-        return self._request("POST", "/projects", json=body)
+            project["address"] = address
+        if primary_contact:
+            project["primary_contact"] = primary_contact
+        return self._request("POST", "/projects", json={"project": project})
 
     def add_project_labels(self, project_id: str, labels: list[str]) -> list[dict]:
         return self._request(
             "POST",
             f"/projects/{project_id}/labels",
             json={"project": {"labels": labels}},
+        )
+
+    def update_project_notepad(self, project_id: str, notepad: str) -> dict:
+        return self._request(
+            "PUT",
+            f"/projects/{project_id}/notepad",
+            json={"notepad": notepad},
         )
 
     def add_photo_from_url(
