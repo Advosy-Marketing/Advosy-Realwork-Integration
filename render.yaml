@@ -16,3 +16,5 @@ services:
         sync: false
       - key: COMPANYCAM_PROJECT_LABEL
         value: Bloque Project From Encircle
+      - key: COMPANYCAM_COMPLETE_LABEL
+        value: Bloque Project Complete (Sent to Real Work)

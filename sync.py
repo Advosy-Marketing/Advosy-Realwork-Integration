@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from encircle import EncircleClient
 from companycam import CompanyCamClient
 from store import SyncStore
-from config import COMPANYCAM_PROJECT_LABEL
+from config import COMPANYCAM_PROJECT_LABEL, COMPANYCAM_COMPLETE_LABEL
 
 
 def _iso_to_unix(s: str | None) -> int:
@@ -165,12 +165,13 @@ class SyncEngine:
         self.store.record_project_for_claim(claim_id, project_id, project_url)
         print(f"  + created CompanyCam project {project_id} ({project_url})")
 
-        if COMPANYCAM_PROJECT_LABEL:
+        labels_to_apply = [l for l in (COMPANYCAM_PROJECT_LABEL, COMPANYCAM_COMPLETE_LABEL) if l]
+        if labels_to_apply:
             try:
-                self.companycam.add_project_labels(project_id, [COMPANYCAM_PROJECT_LABEL])
-                print(f"  + applied label '{COMPANYCAM_PROJECT_LABEL}'")
+                self.companycam.add_project_labels(project_id, labels_to_apply)
+                print(f"  + applied labels: {labels_to_apply}")
             except Exception as e:
-                print(f"  ! failed to apply label '{COMPANYCAM_PROJECT_LABEL}': {e}")
+                print(f"  ! failed to apply labels {labels_to_apply}: {e}")
 
         return project_id, True
 
